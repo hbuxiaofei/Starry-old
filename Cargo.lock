@@ -2018,6 +2018,7 @@ dependencies = [
  "axtask",
  "numeric-enum-macro",
  "rand",
+ "syscall_net",
  "syscall_utils",
 ]
 

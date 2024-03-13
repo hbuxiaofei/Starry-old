@@ -1,5 +1,7 @@
 extern crate alloc;
 use alloc::vec::Vec;
+use alloc::sync::Arc;
+use alloc::collections::VecDeque;
 use core::{
     mem::size_of,
     ptr::copy_nonoverlapping,
@@ -759,4 +761,99 @@ pub unsafe fn socket_address_to(addr: SocketAddr, buf: *mut u8, buf_len: *mut u3
     copy_nonoverlapping(address.as_ptr(), buf, write_len);
 
     Ok(())
+}
+
+
+
+struct UnixBuffer<T> {
+    buffer: VecDeque<T>,
+    capacity: usize,
+}
+
+impl<T> UnixBuffer<T> {
+    fn new(capacity: usize) -> Self {
+        UnixBuffer {
+            buffer: VecDeque::with_capacity(capacity),
+            capacity,
+        }
+    }
+
+    fn push(&mut self, element: T) {
+        if self.buffer.len() == self.capacity {
+            self.buffer.pop_front();
+        }
+        self.buffer.push_back(element);
+    }
+
+    fn pop(&mut self) -> Option<T> {
+        self.buffer.pop_front()
+    }
+
+    fn len(&self) -> usize {
+        self.buffer.len()
+    }
+}
+
+pub struct UnixSocket {
+    rx_buffer: Arc<Mutex<UnixBuffer<u8>>>,
+    tx_buffer: Arc<Mutex<UnixBuffer<u8>>>,
+}
+
+impl UnixSocket {
+    pub fn new() -> Self {
+        UnixSocket {
+            rx_buffer: Arc::new(Mutex::new(UnixBuffer::new(256))),
+            tx_buffer: Arc::new(Mutex::new(UnixBuffer::new(256))),
+        }
+    }
+
+    pub fn new_with_pair(pair: &UnixSocket) -> Self {
+        UnixSocket {
+            rx_buffer: Arc::clone(&pair.tx_buffer),
+            tx_buffer: Arc::clone(&pair.rx_buffer),
+        }
+
+    }
+}
+
+impl FileIO for UnixSocket {
+    fn read(&self, buf: &mut [u8]) -> AxResult<usize> {
+        let mut value_ptr = self.tx_buffer.lock();
+        for i in 0..value_ptr.len() {
+            buf[i] = value_ptr.pop().unwrap();
+        }
+        Ok(buf.len())
+    }
+
+
+    fn write(&self, buf: &[u8]) -> AxResult<usize> {
+        for byte in buf.iter() {
+             let mut value_ptr = self.rx_buffer.lock();
+             value_ptr.push(*byte);
+        }
+        Ok(buf.len())
+    }
+
+
+    fn flush(&self) -> AxResult {
+        Err(AxError::Unsupported)
+    }
+
+    fn readable(&self) -> bool {
+        true
+    }
+
+
+    fn writable(&self) -> bool {
+        true
+    }
+
+    fn executable(&self) -> bool {
+        false
+    }
+
+    fn get_type(&self) -> FileIOType {
+        FileIOType::Socket
+    }
+
 }

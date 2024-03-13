@@ -9,6 +9,7 @@ use imp::*;
 mod net_syscall_id;
 pub use net_syscall_id::NetSyscallId::{self, *};
 pub use socket::Socket;
+pub use socket::UnixSocket;
 /// 进行 syscall 的分发
 pub fn net_syscall(syscall_id: net_syscall_id::NetSyscallId, args: [usize; 6]) -> SyscallResult {
     match syscall_id {

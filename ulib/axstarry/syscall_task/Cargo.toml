@@ -29,4 +29,5 @@ axconfig = { path = "../../../modules/axconfig" }
 axlog = { path = "../../../modules/axlog" }
 axhal = { path = "../../../modules/axhal" }
 syscall_utils = { path = "../syscall_utils" }
+syscall_net = { path = "../syscall_net" }
 rand = { version = "0.8.5", default-features = false, features = ["small_rng"] }

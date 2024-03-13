@@ -11,6 +11,8 @@ mod task;
 
 mod utils;
 
+mod unix;
+
 #[cfg(feature = "signal")]
 pub use signal::*;
 
@@ -23,3 +25,5 @@ pub use schedule::*;
 pub use task::*;
 
 pub use utils::*;
+
+pub use unix::*;
