@@ -20,6 +20,10 @@
 
 ### x86_64
 
+这里是 `x86_ZLMediaKit` 分支，请开发同学关注 `ZLMediaKit` 启动方式
+
+#### 通常启动
+
 ```shell
 # 构建镜像
 # 默认构建x86_64架构的fat32磁盘镜像
@@ -39,8 +43,31 @@ make run
 
 ```
 
-如果 `./build_x86.sh` 卡住，可以[手动下载](https://github.com/oscomp/testsuits-for-oskernel/releases/download/final-x86_64/testsuits-x86_64-linux-musl.tgz)测例文件，然后把其中的 `wget` 一行注释掉并再次执行。
+如果 `./build_img.sh` 卡住，可以[手动下载](https://github.com/oscomp/testsuits-for-oskernel/releases/download/final-x86_64/testsuits-x86_64-linux-musl.tgz)测例文件，然后把其中的 `wget` 一行注释掉并再次执行。
 
+#### ZLM 启动
+
+1. 在 Starry 同级目录或者其他位置下载并编译 ZLM，详见 `https://docs.zlmediakit.com/zh/guide/install/`
+2. 将 ZLM 项目的 `release/linux/Debug/MediaServer` 复制到 `Starry` 项目下的 `testcases/ZLM/` 下
+3. 按如下方式运行
+```shell
+# 如果你本机是 x86，可以尝试以下命令测试 MediaServer 本体是否有问题
+# 也可跳过这一步
+./testcases/ZLM/MediaServer -h
+
+# 构建镜像
+# 默认构建x86_64架构的fat32磁盘镜像
+./build_img.sh ZLM
+
+# 运行宏内核
+make run
+
+# 在 Starry 中尝试运行如下命令
+> ./MediaServer -h
+
+# 在通过第一阶段之前，上述命令会执行失败
+# 在通过第一阶段之后，上述命令的输出应该和 x86 本机输出大致相同
+```
 
 ### RISC-V
 
