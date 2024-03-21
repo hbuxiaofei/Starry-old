@@ -1,4 +1,4 @@
-use axfs::api::{FileIO, FileIOType};
+use axfs::api::{FileIO, FileIOType, OpenFlags};
 extern crate alloc;
 use alloc::sync::{Arc, Weak};
 use axerrno::AxResult;
@@ -14,27 +14,32 @@ pub struct Pipe {
     #[allow(unused)]
     writable: bool,
     buffer: Arc<Mutex<PipeRingBuffer>>,
-    non_block: bool,
+    #[allow(unused)]
+    flags: Mutex<OpenFlags>,
 }
 
 impl Pipe {
     /// create readable pipe
-    pub fn read_end_with_buffer(buffer: Arc<Mutex<PipeRingBuffer>>, non_block: bool) -> Self {
+    pub fn read_end_with_buffer(buffer: Arc<Mutex<PipeRingBuffer>>, flags: OpenFlags) -> Self {
         Self {
             readable: true,
             writable: false,
             buffer,
-            non_block,
+            flags: Mutex::new(flags | OpenFlags::RDONLY),
         }
     }
     /// create writable pipe
-    pub fn write_end_with_buffer(buffer: Arc<Mutex<PipeRingBuffer>>, non_block: bool) -> Self {
+    pub fn write_end_with_buffer(buffer: Arc<Mutex<PipeRingBuffer>>, flags: OpenFlags) -> Self {
         Self {
             readable: false,
             writable: true,
             buffer,
-            non_block,
+            flags: Mutex::new(flags | OpenFlags::WRONLY),
         }
+    }
+    /// is it set non block?
+    pub fn is_non_block(&self) -> bool {
+        self.flags.lock().contains(OpenFlags::NON_BLOCK)
     }
 }
 
@@ -109,11 +114,11 @@ impl PipeRingBuffer {
 }
 
 /// Return (read_end, write_end)
-pub fn make_pipe(non_block: bool) -> (Arc<Pipe>, Arc<Pipe>) {
+pub fn make_pipe(flags: OpenFlags) -> (Arc<Pipe>, Arc<Pipe>) {
     trace!("kernel: make_pipe");
     let buffer = Arc::new(Mutex::new(PipeRingBuffer::new()));
-    let read_end = Arc::new(Pipe::read_end_with_buffer(buffer.clone(), non_block));
-    let write_end = Arc::new(Pipe::write_end_with_buffer(buffer.clone(), non_block));
+    let read_end = Arc::new(Pipe::read_end_with_buffer(buffer.clone(), flags));
+    let write_end = Arc::new(Pipe::write_end_with_buffer(buffer.clone(), flags));
     buffer.lock().set_write_end(&write_end);
     (read_end, write_end)
 }
@@ -137,7 +142,7 @@ impl FileIO for Pipe {
                 }
                 if Arc::strong_count(&self.buffer) < 2
                     || ring_buffer.all_write_ends_closed()
-                    || self.non_block
+                    || self.is_non_block()
                 {
                     return Ok(already_read);
                 }
@@ -173,7 +178,7 @@ impl FileIO for Pipe {
             if loop_write == 0 {
                 drop(ring_buffer);
 
-                if Arc::strong_count(&self.buffer) < 2 || self.non_block {
+                if Arc::strong_count(&self.buffer) < 2 || self.is_non_block() {
                     // 读入端关闭
                     return Ok(already_write);
                 }
@@ -234,5 +239,32 @@ impl FileIO for Pipe {
 
     fn ready_to_write(&self) -> bool {
         self.writable && self.buffer.lock().available_write() != 0
+    }
+
+    /// 设置文件状态
+    fn set_status(&self, flags: OpenFlags) -> bool {
+        if flags.contains(OpenFlags::CLOEXEC) {
+            *self.flags.lock() = flags;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// 获取文件状态
+    fn get_status(&self) -> OpenFlags {
+        *self.flags.lock()
+    }
+
+    /// 设置 close_on_exec 位
+    /// 设置成功返回false
+    fn set_close_on_exec(&self, is_set: bool) -> bool {
+        if is_set {
+            // 设置close_on_exec位置
+            *self.flags.lock() |= OpenFlags::CLOEXEC;
+        } else {
+            *self.flags.lock() &= !OpenFlags::CLOEXEC;
+        }
+        true
     }
 }
