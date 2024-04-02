@@ -52,6 +52,7 @@ pub fn fs_syscall(syscall_id: fs_syscall_id::FsSyscallId, args: [usize; 6]) -> S
         LINKAT => sys_linkat(args),
         UNLINKAT => syscall_unlinkat(args),
         UTIMENSAT => syscall_utimensat(args),
+        EVENTFD2 => syscall_eventfd2(args),
         EPOLL_CREATE => syscall_epoll_create1(args),
         EPOLL_CTL => syscall_epoll_ctl(args),
         EPOLL_WAIT => syscall_epoll_wait(args),

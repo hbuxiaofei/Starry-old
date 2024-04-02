@@ -8,4 +8,6 @@ pub mod pipe;
 
 pub use file::FileDesc;
 
+pub mod eventfd;
+
 pub mod epoll;
