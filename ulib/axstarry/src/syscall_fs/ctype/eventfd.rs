@@ -74,6 +74,17 @@ impl FileIO for EventfdFile {
     fn writable(&self) -> bool {
         true
     }
+    fn ready_to_read(&self) -> bool {
+        let inner = self.inner.lock();
+        if inner.ctx.count > 0 {
+            true
+        } else {
+            false
+        }
+    }
+    fn ready_to_write(&self) -> bool {
+        true
+    }
     fn executable(&self) -> bool {
         false
     }
