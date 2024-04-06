@@ -13,7 +13,7 @@ use axfs::api::{FileIO, FileIOType, OpenFlags, Read, Write};
 use axlog::warn;
 use axnet::{
     from_core_sockaddr, into_core_sockaddr, poll_interfaces, IpAddr, SocketAddr, TcpSocket,
-    UdpSocket,
+    UdpSocket, NlSocket,
 };
 use axsync::Mutex;
 use num_enum::TryFromPrimitive;
@@ -28,6 +28,7 @@ pub const SOCKET_TYPE_MASK: usize = 0xFF;
 pub enum Domain {
     AF_UNIX = 1,
     AF_INET = 2,
+    AF_NETLINK = 16,
 }
 
 #[derive(TryFromPrimitive, PartialEq, Eq, Clone, Debug)]
@@ -158,6 +159,7 @@ impl SocketOption {
                             "[setsockopt()] set keep-alive for tcp socket not created, ignored"
                         ),
                     }),
+                    SocketInner::Netlink(_) => todo!(),
                 };
                 drop(inner);
                 socket.set_recv_buf_size(opt_value as u64);
@@ -251,6 +253,7 @@ impl SocketOption {
                         );
                             0},
                     }),
+                    SocketInner::Netlink(_) => todo!(),
                 };
                 drop(inner);
 
@@ -389,6 +392,8 @@ pub enum SocketInner {
     Tcp(TcpSocket),
     /// UDP socket
     Udp(UdpSocket),
+    /// Netlink socket
+    Netlink(NlSocket),
 }
 
 impl Socket {
@@ -443,6 +448,7 @@ impl Socket {
                 SocketInner::Tcp(TcpSocket::new())
             }
             SocketType::SOCK_DGRAM => SocketInner::Udp(UdpSocket::new()),
+            SocketType::SOCK_RAW => SocketInner::Netlink(NlSocket::new()),
             _ => unimplemented!(),
         };
         Self {
@@ -466,6 +472,7 @@ impl Socket {
         match &*inner {
             SocketInner::Tcp(s) => s.set_nonblocking(nonblocking),
             SocketInner::Udp(s) => s.set_nonblocking(nonblocking),
+            SocketInner::Netlink(_) => todo!(),
         }
     }
 
@@ -475,6 +482,7 @@ impl Socket {
         match &*inner {
             SocketInner::Tcp(s) => s.is_nonblocking(),
             SocketInner::Udp(s) => s.is_nonblocking(),
+            SocketInner::Netlink(_) => todo!(),
         }
     }
 
@@ -484,6 +492,7 @@ impl Socket {
         match &*inner {
             SocketInner::Tcp(s) => s.is_connected(),
             SocketInner::Udp(s) => s.with_socket(|s| s.is_open()),
+            SocketInner::Netlink(_) => todo!(),
         }
     }
 
@@ -493,8 +502,10 @@ impl Socket {
         match &*inner {
             SocketInner::Tcp(s) => s.local_addr(),
             SocketInner::Udp(s) => s.local_addr(),
+            SocketInner::Netlink(_) => todo!(),
         }
         .map(from_core_sockaddr)
+        .map(SocketAddr::from)
     }
 
     /// Return peer address.
@@ -503,16 +514,19 @@ impl Socket {
         match &*inner {
             SocketInner::Tcp(s) => s.peer_addr(),
             SocketInner::Udp(s) => s.peer_addr(),
+            SocketInner::Netlink(_) => todo!(),
         }
         .map(from_core_sockaddr)
+        .map(SocketAddr::from)
     }
 
     /// Bind the socket to the given address.
     pub fn bind(&self, addr: SocketAddr) -> AxResult {
         let inner = self.inner.lock();
         match &*inner {
-            SocketInner::Tcp(s) => s.bind(into_core_sockaddr(addr)),
-            SocketInner::Udp(s) => s.bind(into_core_sockaddr(addr)),
+            SocketInner::Tcp(s) => s.bind(into_core_sockaddr(addr.into())),
+            SocketInner::Udp(s) => s.bind(into_core_sockaddr(addr.into())),
+            SocketInner::Netlink(_) => todo!(),
         }
     }
 
@@ -531,6 +545,7 @@ impl Socket {
         match &*inner {
             SocketInner::Tcp(s) => s.listen(),
             SocketInner::Udp(_) => Err(AxError::Unsupported),
+            SocketInner::Netlink(_) => todo!(),
         }
     }
 
@@ -545,6 +560,7 @@ impl Socket {
         let new_socket = match &*inner {
             SocketInner::Tcp(s) => s.accept()?,
             SocketInner::Udp(_) => Err(AxError::Unsupported)?,
+            SocketInner::Netlink(_) => todo!(),
         };
         let addr = new_socket.peer_addr()?;
 
@@ -561,7 +577,7 @@ impl Socket {
                 recv_buf_size: AtomicU64::new(64 * 1024),
                 congestion: Mutex::new(String::from("reno")),
             },
-            from_core_sockaddr(addr),
+            from_core_sockaddr(addr).into(),
         ))
     }
 
@@ -569,8 +585,9 @@ impl Socket {
     pub fn connect(&self, addr: SocketAddr) -> AxResult {
         let inner = self.inner.lock();
         match &*inner {
-            SocketInner::Tcp(s) => s.connect(into_core_sockaddr(addr)),
-            SocketInner::Udp(s) => s.connect(into_core_sockaddr(addr)),
+            SocketInner::Tcp(s) => s.connect(into_core_sockaddr(addr.into())),
+            SocketInner::Udp(s) => s.connect(into_core_sockaddr(addr.into())),
+            SocketInner::Netlink(_) => todo!(),
         }
     }
 
@@ -581,6 +598,7 @@ impl Socket {
         match &*inner {
             SocketInner::Tcp(s) => s.local_addr().is_ok(),
             SocketInner::Udp(s) => s.local_addr().is_ok(),
+            SocketInner::Netlink(_) => todo!(),
         }
     }
     #[allow(unused)]
@@ -589,7 +607,8 @@ impl Socket {
         let inner = self.inner.lock();
         match &*inner {
             SocketInner::Tcp(s) => s.send(buf),
-            SocketInner::Udp(s) => s.send_to(buf, into_core_sockaddr(addr)),
+            SocketInner::Udp(s) => s.send_to(buf, into_core_sockaddr(addr.into())),
+            SocketInner::Netlink(_) => todo!(),
         }
     }
 
@@ -605,15 +624,19 @@ impl Socket {
                     None => s.recv(buf),
                 }
                 .map(|len| (len, from_core_sockaddr(addr)))
+                .map(|(len, sa)| (len, SocketAddr::from(sa)))
             }
             SocketInner::Udp(s) => match self.get_recv_timeout() {
                 Some(time) => s
                     .recv_from_timeout(buf, time.turn_to_ticks())
-                    .map(|(val, addr)| (val, from_core_sockaddr(addr))),
+                    .map(|(val, addr)| (val, from_core_sockaddr(addr)))
+                    .map(|(val, sa)| (val, SocketAddr::from(sa))),
                 None => s
                     .recv_from(buf)
-                    .map(|(val, addr)| (val, from_core_sockaddr(addr))),
+                    .map(|(val, addr)| (val, from_core_sockaddr(addr)))
+                    .map(|(val, sa)| (val, SocketAddr::from(sa))),
             },
+            SocketInner::Netlink(_) => todo!(),
         }
     }
 
@@ -625,6 +648,7 @@ impl Socket {
                 s.shutdown();
             }
             SocketInner::Tcp(s) => s.close(),
+            SocketInner::Netlink(_) => todo!(),
         };
     }
 
@@ -640,6 +664,7 @@ impl Socket {
                     s.abort();
                 }
             }),
+            SocketInner::Netlink(_) => todo!(),
         }
     }
 }
@@ -650,6 +675,7 @@ impl FileIO for Socket {
         match &mut *inner {
             SocketInner::Tcp(s) => s.read(buf),
             SocketInner::Udp(s) => s.read(buf),
+            SocketInner::Netlink(_) => todo!(),
         }
     }
 
@@ -658,6 +684,7 @@ impl FileIO for Socket {
         match &mut *inner {
             SocketInner::Tcp(s) => s.write(buf),
             SocketInner::Udp(s) => s.write(buf),
+            SocketInner::Netlink(_) => todo!(),
         }
     }
 
@@ -671,6 +698,7 @@ impl FileIO for Socket {
         match &*inner {
             SocketInner::Tcp(s) => s.poll().map_or(false, |p| p.readable),
             SocketInner::Udp(s) => s.poll().map_or(false, |p| p.readable),
+            SocketInner::Netlink(_) => todo!(),
         }
     }
 
@@ -680,6 +708,7 @@ impl FileIO for Socket {
         match &*inner {
             SocketInner::Tcp(s) => s.poll().map_or(false, |p| p.writable),
             SocketInner::Udp(s) => s.poll().map_or(false, |p| p.writable),
+            SocketInner::Netlink(_) => todo!(),
         }
     }
 
@@ -735,6 +764,7 @@ pub unsafe fn socket_address_from(addr: *const u8) -> SocketAddr {
             let addr = IpAddr::v4(a[0], a[1], a[2], a[3]);
             SocketAddr { addr, port }
         }
+        Domain::AF_NETLINK => unimplemented!(),
     }
 }
 /// Only support INET (ipv4)

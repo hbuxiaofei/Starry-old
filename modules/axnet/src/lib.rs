@@ -37,9 +37,42 @@ pub use self::net_impl::UdpSocket;
 pub use self::net_impl::{bench_receive, bench_transmit};
 pub use self::net_impl::{dns_query, from_core_sockaddr, into_core_sockaddr, poll_interfaces};
 pub use smoltcp::time::Duration;
-pub use smoltcp::wire::{IpAddress as IpAddr, IpEndpoint as SocketAddr, Ipv4Address as Ipv4Addr};
+pub use smoltcp::wire::{IpAddress as IpAddr, IpEndpoint, Ipv4Address as Ipv4Addr};
+
+mod netlink;
+pub use netlink::NlSocket;
 
 use axdriver::{prelude::*, AxDeviceContainer};
+
+#[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+pub struct SocketAddr {
+    pub addr: IpAddr,
+    pub port: u16,
+}
+
+impl SocketAddr {
+    pub fn new(addr: IpAddr, port: u16) -> Self {
+        SocketAddr { addr, port }
+    }
+}
+
+impl Into<IpEndpoint> for SocketAddr {
+    fn into(self) -> IpEndpoint {
+        IpEndpoint {
+            addr: self.addr,
+            port: self.port,
+        }
+    }
+}
+
+impl From<IpEndpoint> for SocketAddr {
+    fn from(ie: IpEndpoint) -> Self {
+        SocketAddr {
+            addr: ie.addr,
+            port: ie.port,
+        }
+    }
+}
 
 /// Initializes the network subsystem by NIC devices.
 pub fn init_network(mut net_devs: AxDeviceContainer<AxNetDevice>) {
