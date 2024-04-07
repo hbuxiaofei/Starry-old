@@ -321,7 +321,7 @@ pub fn syscall_sendto(args: [usize; 6]) -> SyscallResult {
         SocketInner::Udp(s) => {
             // udp socket not bound
             if s.local_addr().is_err() {
-                s.bind(into_core_sockaddr(SocketAddr::new(
+                s.bind(into_core_sockaddr(SocketAddr::new_ipv4(
                     IpAddr::v4(0, 0, 0, 0),
                     0,
                 ).into()))
@@ -349,8 +349,8 @@ pub fn syscall_sendto(args: [usize; 6]) -> SyscallResult {
 
             s.send(buf)
         }
-        SocketInner::Netlink(_) => {
-            todo!()
+        SocketInner::Netlink(s) => {
+            s.send(buf)
         }
     };
 

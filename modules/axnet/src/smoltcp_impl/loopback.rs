@@ -29,8 +29,8 @@ fn snoop_tcp_from_ip(buffer: &[u8], sockets: &mut SocketSet) -> Result<(), smolt
 
     if ipv4_packet.next_header() == IpProtocol::Tcp {
         let tcp_packet = TcpPacket::new_checked(ipv4_packet.payload())?;
-        let src_addr = SocketAddr::new(ipv4_packet.src_addr().into(), tcp_packet.src_port());
-        let dst_addr = SocketAddr::new(ipv4_packet.dst_addr().into(), tcp_packet.dst_port());
+        let src_addr = SocketAddr::new_ipv4(ipv4_packet.src_addr().into(), tcp_packet.src_port());
+        let dst_addr = SocketAddr::new_ipv4(ipv4_packet.dst_addr().into(), tcp_packet.dst_port());
         let is_first = tcp_packet.syn() && !tcp_packet.ack();
         if is_first {
             // create a socket for the first incoming TCP packet, as the later accept() returns.

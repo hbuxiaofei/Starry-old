@@ -10,15 +10,17 @@ use alloc::string::String;
 use axerrno::{AxError, AxResult};
 use axfs::api::{FileIO, FileIOType, OpenFlags, Read, Write};
 
-use axlog::warn;
+use axlog::{warn, error};
 use axnet::{
     from_core_sockaddr, into_core_sockaddr, poll_interfaces, IpAddr, SocketAddr, TcpSocket,
-    UdpSocket, NlSocket,
+    UdpSocket, NetlinkSocket,
 };
 use axsync::Mutex;
 use num_enum::TryFromPrimitive;
 
 use crate::TimeVal;
+
+use super::netlink::netlink_unicast;
 
 pub const SOCKET_TYPE_MASK: usize = 0xFF;
 
@@ -393,7 +395,7 @@ pub enum SocketInner {
     /// UDP socket
     Udp(UdpSocket),
     /// Netlink socket
-    Netlink(NlSocket),
+    Netlink(NetlinkSocket),
 }
 
 impl Socket {
@@ -448,7 +450,7 @@ impl Socket {
                 SocketInner::Tcp(TcpSocket::new())
             }
             SocketType::SOCK_DGRAM => SocketInner::Udp(UdpSocket::new()),
-            SocketType::SOCK_RAW => SocketInner::Netlink(NlSocket::new()),
+            SocketType::SOCK_RAW => SocketInner::Netlink(NetlinkSocket::new()),
             _ => unimplemented!(),
         };
         Self {
@@ -522,11 +524,11 @@ impl Socket {
 
     /// Bind the socket to the given address.
     pub fn bind(&self, addr: SocketAddr) -> AxResult {
-        let inner = self.inner.lock();
-        match &*inner {
+        let mut inner = self.inner.lock();
+        match &mut *inner {
             SocketInner::Tcp(s) => s.bind(into_core_sockaddr(addr.into())),
             SocketInner::Udp(s) => s.bind(into_core_sockaddr(addr.into())),
-            SocketInner::Netlink(_) => todo!(),
+            SocketInner::Netlink(s) => s.bind(addr.nl_groups),
         }
     }
 
@@ -614,6 +616,7 @@ impl Socket {
 
     /// let the socket receive data and write it to the given buffer
     pub fn recv_from(&self, buf: &mut [u8]) -> AxResult<(usize, SocketAddr)> {
+        netlink_unicast();
         let inner = self.inner.lock();
         match &*inner {
             SocketInner::Tcp(s) => {
@@ -636,7 +639,10 @@ impl Socket {
                     .map(|(val, addr)| (val, from_core_sockaddr(addr)))
                     .map(|(val, sa)| (val, SocketAddr::from(sa))),
             },
-            SocketInner::Netlink(_) => todo!(),
+            SocketInner::Netlink(s) => {
+                    s.recv_from(buf)
+                    .map(|val| (val, SocketAddr::new_netlink(s.nl_groups)))
+            },
         }
     }
 
@@ -762,9 +768,12 @@ pub unsafe fn socket_address_from(addr: *const u8) -> SocketAddr {
             let a = (*(addr.add(2) as *const u32)).to_le_bytes();
 
             let addr = IpAddr::v4(a[0], a[1], a[2], a[3]);
-            SocketAddr { addr, port }
+            SocketAddr::new_ipv4(addr, port)
         }
-        Domain::AF_NETLINK => unimplemented!(),
+        Domain::AF_NETLINK => {
+            let groups = *(addr.add(4) as *const u32);
+            SocketAddr::new_netlink(groups)
+        }
     }
 }
 /// Only support INET (ipv4)

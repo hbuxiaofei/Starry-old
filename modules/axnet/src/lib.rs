@@ -40,7 +40,7 @@ pub use smoltcp::time::Duration;
 pub use smoltcp::wire::{IpAddress as IpAddr, IpEndpoint, Ipv4Address as Ipv4Addr};
 
 mod netlink;
-pub use netlink::NlSocket;
+pub use netlink::NetlinkSocket;
 
 use axdriver::{prelude::*, AxDeviceContainer};
 
@@ -48,11 +48,33 @@ use axdriver::{prelude::*, AxDeviceContainer};
 pub struct SocketAddr {
     pub addr: IpAddr,
     pub port: u16,
+    pub nl_groups: u32,
+}
+
+impl Default for SocketAddr {
+    fn default() -> Self {
+        SocketAddr {
+            addr: IpAddr::v4(0, 0, 0, 0),
+            port: 0,
+            nl_groups: 0, // RTNLGRP_NONE
+        }
+    }
 }
 
 impl SocketAddr {
-    pub fn new(addr: IpAddr, port: u16) -> Self {
-        SocketAddr { addr, port }
+    pub fn new_ipv4(addr: IpAddr, port: u16) -> Self {
+        SocketAddr {
+           addr,
+            port,
+            ..Default::default()
+        }
+    }
+
+    pub fn new_netlink(groups: u32) -> Self {
+        SocketAddr {
+            nl_groups: groups,
+            ..Default::default()
+        }
     }
 }
 
@@ -70,6 +92,7 @@ impl From<IpEndpoint> for SocketAddr {
         SocketAddr {
             addr: ie.addr,
             port: ie.port,
+            ..Default::default()
         }
     }
 }
