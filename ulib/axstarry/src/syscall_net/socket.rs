@@ -13,14 +13,12 @@ use axfs::api::{FileIO, FileIOType, OpenFlags, Read, Write};
 use axlog::{warn, error};
 use axnet::{
     from_core_sockaddr, into_core_sockaddr, poll_interfaces, IpAddr, SocketAddr, TcpSocket,
-    UdpSocket, NetlinkSocket,
+    UdpSocket, NetlinkSocket, NetlinkProto,
 };
 use axsync::Mutex;
 use num_enum::TryFromPrimitive;
 
 use crate::TimeVal;
-
-use super::netlink::netlink_unicast;
 
 pub const SOCKET_TYPE_MASK: usize = 0xFF;
 
@@ -373,6 +371,7 @@ impl TcpSocketOption {
 pub struct Socket {
     domain: Domain,
     socket_type: SocketType,
+    protocol: usize,
 
     /// Type of the socket protocol used
     pub inner: Mutex<SocketInner>,
@@ -443,19 +442,25 @@ impl Socket {
         *self.congestion.lock() = congestion;
     }
 
-    /// Create a new socket with the given domain and socket type.
-    pub fn new(domain: Domain, socket_type: SocketType) -> Self {
+    /// Create a new socket with the given domain, socket type and protocol.
+    pub fn new(domain: Domain, socket_type: SocketType, protocol: usize) -> Self {
         let inner = match socket_type {
             SocketType::SOCK_STREAM | SocketType::SOCK_SEQPACKET => {
                 SocketInner::Tcp(TcpSocket::new())
             }
             SocketType::SOCK_DGRAM => SocketInner::Udp(UdpSocket::new()),
-            SocketType::SOCK_RAW => SocketInner::Netlink(NetlinkSocket::new()),
+            SocketType::SOCK_RAW => {
+                let Ok(proto) = NetlinkProto::try_from(protocol) else {
+                    unimplemented!()
+                };
+                SocketInner::Netlink(NetlinkSocket::new(proto))
+            }
             _ => unimplemented!(),
         };
         Self {
             domain,
             socket_type,
+            protocol,
             inner: Mutex::new(inner),
             close_exec: false,
             recv_timeout: Mutex::new(None),
@@ -570,6 +575,7 @@ impl Socket {
             Self {
                 domain: self.domain.clone(),
                 socket_type: self.socket_type.clone(),
+                protocol: self.protocol,
                 inner: Mutex::new(SocketInner::Tcp(new_socket)),
                 close_exec: false,
                 recv_timeout: Mutex::new(None),
@@ -616,7 +622,6 @@ impl Socket {
 
     /// let the socket receive data and write it to the given buffer
     pub fn recv_from(&self, buf: &mut [u8]) -> AxResult<(usize, SocketAddr)> {
-        netlink_unicast();
         let inner = self.inner.lock();
         match &*inner {
             SocketInner::Tcp(s) => {

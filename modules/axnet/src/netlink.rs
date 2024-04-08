@@ -1,3 +1,4 @@
+use num_enum::TryFromPrimitive;
 extern crate alloc;
 use alloc::sync::Arc;
 use alloc::collections::VecDeque;
@@ -5,6 +6,30 @@ use core::cmp::min;
 
 use axsync::Mutex;
 use axerrno::AxResult;
+
+#[derive(TryFromPrimitive, PartialEq, Eq, Clone, Debug)]
+#[repr(usize)]
+#[allow(non_camel_case_types)]
+pub enum NetlinkProto {
+    /// Routing/device hook
+    NETLINK_ROUTE = 0,
+    /// Unused number
+    NETLINK_UNUSED = 1,
+    /// Reserved for user mode socket protocols
+    NETLINK_USERSOCK = 2,
+    /// Unused number, formerly ip_queu
+    NETLINK_FIREWALL = 3,
+    /// socket monitoring
+    NETLINK_SOCK_DIAG = 4,
+    /// netfilter/iptables ULOG
+    NETLINK_NFLOG = 5,
+    /// auditing
+    NETLINK_AUDIT = 9,
+    /// netfilter subsystem
+    NETLINK_NETFILTER = 12,
+    MAX_LINKS = 32,
+}
+
 
 struct NetlinkBuffer<T> {
     buffer: VecDeque<T>,
@@ -40,23 +65,27 @@ impl<T> NetlinkBuffer<T> {
 }
 
 pub struct NetlinkSocket {
+    pub protocol: NetlinkProto,
+    pub nl_groups: u32,
+    pub nl_pid: u32,
     rx_buffer: Arc<Mutex<NetlinkBuffer<u8>>>,
     tx_buffer: Arc<Mutex<NetlinkBuffer<u8>>>,
-    pub nl_groups: u32,
 }
 
 impl NetlinkSocket {
-    pub fn new() -> Self {
+    pub fn new(protocol: NetlinkProto) -> Self {
         NetlinkSocket {
+            protocol,
+            nl_groups: 64, // RTNLGRP_MAX ?
+            nl_pid: 0,
             rx_buffer: Arc::new(Mutex::new(NetlinkBuffer::new(1024))),
             tx_buffer: Arc::new(Mutex::new(NetlinkBuffer::new(1024))),
-            nl_groups: 0,
         }
     }
 
     pub fn bind(&mut self, groups: u32) -> AxResult {
         self.nl_groups = groups;
-       Ok(())
+        Ok(())
     }
 
     pub fn send(&self, buf: &[u8]) -> AxResult<usize> {

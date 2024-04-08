@@ -471,6 +471,7 @@ dependencies = [
  "driver_net",
  "lazy_init",
  "log",
+ "num_enum",
  "smoltcp",
  "spin 0.9.8",
 ]

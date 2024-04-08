@@ -1,6 +1,8 @@
 //! 相关系统调用的具体实现
 extern crate alloc;
 use super::socket::*;
+use super::netlink::*;
+use super::rtnetlink::*;
 use core::slice::{from_raw_parts, from_raw_parts_mut};
 
 use alloc::sync::Arc;
@@ -21,7 +23,7 @@ pub const SOCKET_TYPE_MASK: usize = 0xFF;
 pub fn syscall_socket(args: [usize; 6]) -> SyscallResult {
     let domain = args[0];
     let s_type = args[1];
-    let _protocol = args[2];
+    let protocol = args[2];
     let Ok(domain) = Domain::try_from(domain) else {
         error!("[socket()] Address Family not supported: {domain}");
         // return ErrorNo::EAFNOSUPPORT as isize;
@@ -31,7 +33,7 @@ pub fn syscall_socket(args: [usize; 6]) -> SyscallResult {
         // return ErrorNo::EINVAL as isize;
         return Err(SyscallError::EINVAL);
     };
-    let mut socket = Socket::new(domain, socket_type);
+    let mut socket = Socket::new(domain, socket_type, protocol);
     if s_type & SOCK_NONBLOCK != 0 {
         socket.set_nonblocking(true)
     }
@@ -350,7 +352,22 @@ pub fn syscall_sendto(args: [usize; 6]) -> SyscallResult {
             s.send(buf)
         }
         SocketInner::Netlink(s) => {
-            s.send(buf)
+            let ans = s.send(buf);
+            let addr = buf.as_ptr() as *const u16;
+            let nlh = unsafe {
+                NlMsgHdr {
+                    nlmsg_len: *(addr as *const u32),
+                    nlmsg_type: *(addr.add(2) as *const u16),
+                    nlmsg_flags: *(addr.add(3) as *const u16),
+                    nlmsg_seq: *(addr.add(4) as *const u32),
+                    nlmsg_pid: *(addr.add(6) as *const u32),
+                }
+            };
+            error!(">>> nlmsg: {:?}", nlh);
+            if nlh.nlmsg_flags > 0 {
+                netlink_ack(&s, &nlh);
+            }
+            ans
         }
     };
 

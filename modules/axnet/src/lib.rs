@@ -40,7 +40,7 @@ pub use smoltcp::time::Duration;
 pub use smoltcp::wire::{IpAddress as IpAddr, IpEndpoint, Ipv4Address as Ipv4Addr};
 
 mod netlink;
-pub use netlink::NetlinkSocket;
+pub use netlink::{NetlinkSocket, NetlinkProto};
 
 use axdriver::{prelude::*, AxDeviceContainer};
 

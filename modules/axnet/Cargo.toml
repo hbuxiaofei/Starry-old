@@ -11,11 +11,12 @@ documentation = "https://rcore-os.github.io/arceos/axnet/index.html"
 
 [features]
 smoltcp = []
+num_enum = []
 
 # 启用ip协议与否
 ip = []
 
-default = ["smoltcp"]
+default = ["smoltcp", "num_enum"]
 
 [dependencies]
 log = "0.4"
@@ -29,6 +30,10 @@ axsync = { path = "../axsync" }
 axtask = { path = "../axtask" }
 axdriver = { path = "../axdriver", features = ["net"] }
 axio = { path = "../../crates/axio" }
+
+[dependencies.num_enum]
+version = "0.5.11"
+default-features = false
 
 [dependencies.smoltcp]
 git = "https://github.com/rcore-os/smoltcp.git"
