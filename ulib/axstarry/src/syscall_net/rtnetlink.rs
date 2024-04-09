@@ -1,8 +1,36 @@
 extern crate alloc;
-use alloc::{string::String, string::ToString, collections::BTreeMap, vec::Vec};
+use alloc::vec::Vec;
 
 use axerrno::{AxError, AxResult};
+use num_enum::TryFromPrimitive;
 
+#[derive(TryFromPrimitive, PartialEq, Eq, Clone, Debug)]
+#[repr(u16)]
+#[allow(non_camel_case_types)]
+pub enum RtmType {
+    RTM_NEWLINK	= 16, // RTM_BASE
+    RTM_DELLINK = 17,
+    RTM_GETLINK = 18,
+    RTM_SETLINK = 19,
+    RTM_NEWADDR = 20,
+    RTM_DELADDR = 21,
+    RTM_GETADDR = 22,
+}
+
+#[derive(TryFromPrimitive, PartialEq, Eq, Clone, Debug)]
+#[repr(u16)]
+#[allow(non_camel_case_types)]
+pub enum IflaSpec {
+    IFLA_UNSPEC = 0,
+    IFLA_ADDRESS = 1,
+    IFLA_BROADCAST = 2,
+    IFLA_IFNAME = 3,
+    IFLA_MTU = 4,
+    IFLA_LINK = 5,
+    IFLA_QDISC = 6,
+    IFLA_STATS = 7,
+    IFLA_COST = 8,
+}
 
 pub struct SkBuff {
     payload: Vec<u8>,
@@ -65,7 +93,7 @@ impl SkBuff {
 }
 
 
-#[derive(PartialEq, Eq, Clone, Debug)]
+#[derive(PartialEq, Eq, Copy, Clone, Debug, Default)]
 #[repr(C)]
 pub struct NlMsgHdr {
     pub nlmsg_len: u32,
@@ -75,8 +103,152 @@ pub struct NlMsgHdr {
     pub nlmsg_pid: u32,
 }
 
-type FnPtr = fn(&mut SkBuff, &mut NlMsgHdr);
+#[derive(PartialEq, Eq, Copy, Clone, Debug, Default)]
+#[repr(C)]
+pub struct IfInfoMsg {
+    pub ifi_family: u8,
+    pub __ifi_pad: u8,
+    pub ifi_type: u16,
+    pub ifi_index: i32,
+    pub ifi_flags: u32,
+    pub ifi_change: u32,
+}
+
+#[derive(PartialEq, Eq, Copy, Clone, Debug, Default)]
+#[repr(C)]
+pub struct IfAddrMsg {
+    pub ifa_family: u8,
+    /// The prefix length
+    pub ifa_prefixle: u8,
+    /// Flags
+    pub ifa_flags: u8,
+    /// Address scope
+    pub ifa_scope: u8,
+    /// Link index
+    pub ifa_index: u32,
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, Default)]
+#[repr(C)]
+pub struct RtAddr {
+    pub rta_len: u16,
+    pub rta_type: u16,
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, Default)]
+#[repr(C)]
+struct RtnlLinkStats {
+    pub rx_packets: u32,
+    pub tx_packets: u32,
+    pub rx_bytes: u32,
+    pub tx_bytes: u32,
+    pub rx_errors: u32,
+    pub tx_errors: u32,
+    pub rx_dropped: u32,
+    pub tx_dropped: u32,
+    pub multicast: u32,
+    pub collisions: u32,
+
+    pub rx_length_errors: u32,
+    pub rx_over_errors: u32,
+    pub rx_crc_errors: u32,
+    pub rx_frame_errors: u32,
+    pub rx_fifo_errors: u32,
+    pub rx_missed_errors: u32,
+
+    pub tx_aborted_errors: u32,
+    pub tx_carrier_errors: u32,
+    pub tx_fifo_errors: u32,
+    pub tx_heartbeat_errors: u32,
+    pub tx_window_errors: u32,
+
+    pub rx_compressed: u32,
+    pub tx_compressed: u32,
+
+    pub rx_nohandler: u32,
+}
+
+fn nlmsg_end(skb: &mut SkBuff, nlh: &mut NlMsgHdr) -> usize {
+    nlh.nlmsg_len = skb.length() as u32;
+
+    let ptr: *const u8 = skb.get_data().as_ptr();
+    let nlh_ptr: *mut NlMsgHdr = ptr as *mut NlMsgHdr;
+    unsafe {
+        let nlh_new: &mut NlMsgHdr = &mut *nlh_ptr;
+        nlh_new.nlmsg_len = nlh.nlmsg_len;
+    }
+
+    skb.length()
+}
+
+fn nla_put_u8(skb: &mut SkBuff, attrtype: IflaSpec, buf: &[u8]) {
+    let mut rtattr = RtAddr {
+        ..Default::default()
+    };
+    rtattr.rta_type = attrtype as u16;
+    rtattr.rta_len = core::mem::size_of::<RtAddr>() as u16 + buf.len() as u16;
+
+    let ptr = &rtattr as *const RtAddr as *const u8;
+    let rtattr_slice = unsafe {
+        core::slice::from_raw_parts(ptr, core::mem::size_of::<RtAddr>())
+    };
+
+    skb.skb_put(rtattr_slice);
+    skb.skb_put(buf);
+}
+
+fn nla_put_u32(skb: &mut SkBuff, attrtype: IflaSpec, value: u32) {
+    let bytes: [u8; 4] = value.to_ne_bytes();
+    nla_put_u8(skb, attrtype, &bytes);
+}
+
+fn nla_put_string(skb: &mut SkBuff, attrtype: IflaSpec, s: &str) {
+    let bytes = s.as_bytes();
+    nla_put_u8(skb, attrtype, &bytes);
+}
 
 pub fn rtnl_getlink(skb: &mut SkBuff, nlh: &mut NlMsgHdr) -> AxResult {
+    nlh.nlmsg_type = RtmType::RTM_NEWLINK as u16;
+   let ptr = nlh as *const NlMsgHdr as *const u8;
+    let nlh_buf = unsafe {
+        core::slice::from_raw_parts(ptr, core::mem::size_of::<NlMsgHdr>())
+    };
+    skb.skb_put(nlh_buf);
+
+   let ifinfomsg = IfInfoMsg {
+        ..Default::default()
+    };
+    let ptr = &ifinfomsg as *const IfInfoMsg as *const u8;
+    let ifinfomsg_buf = unsafe {
+        core::slice::from_raw_parts(ptr, core::mem::size_of::<IfInfoMsg>())
+    };
+    skb.skb_put(ifinfomsg_buf);
+
+    nla_put_string(skb, IflaSpec::IFLA_IFNAME, "eth0");
+
+    nla_put_u32(skb, IflaSpec::IFLA_MTU, 1500);
+
+    let mut link_state = RtnlLinkStats {
+        ..Default::default()
+    };
+    link_state.rx_packets = 75937;
+    link_state.rx_bytes = 29396057;
+    link_state.tx_packets = 506109;
+    link_state.tx_bytes = 174857788;
+    let ptr = &link_state as *const RtnlLinkStats as *const u8;
+    let link_state_buf = unsafe {
+        core::slice::from_raw_parts(ptr, core::mem::size_of::<RtnlLinkStats>())
+    };
+    nla_put_u8(skb, IflaSpec::IFLA_STATS, &link_state_buf);
+
+    let mac: [u8; 6] = [0x00, 0x0c, 0x29, 0xe9, 0xf2, 0x2e];
+    nla_put_u8(skb, IflaSpec::IFLA_ADDRESS, &mac);
+
+    nlmsg_end(skb, nlh);
+
+    Ok(())
+}
+
+pub fn rtnl_dump_ifinfo(skb: &mut SkBuff, nlh: &mut NlMsgHdr) -> AxResult {
     Ok(())
 }

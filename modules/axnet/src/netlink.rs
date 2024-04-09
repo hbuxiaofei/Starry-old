@@ -3,6 +3,7 @@ extern crate alloc;
 use alloc::sync::Arc;
 use alloc::collections::VecDeque;
 use core::cmp::min;
+use axtask::yield_now;
 
 use axsync::Mutex;
 use axerrno::AxResult;
@@ -106,6 +107,18 @@ impl NetlinkSocket {
     }
 
     pub fn recv_from(&self, buf: &mut [u8]) -> AxResult<usize> {
+       //  loop {
+       //      let len = {
+       //          let tx = self.tx_buffer.lock();
+       //          tx.len()
+       //      };
+       //      if len == 0 {
+       //          yield_now();
+       //          continue;
+       //      }
+       //      break;
+       //  }
+
         let mut tx = self.tx_buffer.lock();
         let length = min(buf.len(), tx.len());
         for i in 0..length {

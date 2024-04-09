@@ -353,19 +353,14 @@ pub fn syscall_sendto(args: [usize; 6]) -> SyscallResult {
         }
         SocketInner::Netlink(s) => {
             let ans = s.send(buf);
-            let addr = buf.as_ptr() as *const u16;
-            let nlh = unsafe {
-                NlMsgHdr {
-                    nlmsg_len: *(addr as *const u32),
-                    nlmsg_type: *(addr.add(2) as *const u16),
-                    nlmsg_flags: *(addr.add(3) as *const u16),
-                    nlmsg_seq: *(addr.add(4) as *const u32),
-                    nlmsg_pid: *(addr.add(6) as *const u32),
-                }
+            let buf_ptr: *const u8 = buf.as_ptr();
+            let nlh_ptr: *mut NlMsgHdr = buf_ptr as *mut NlMsgHdr;
+            let nlh: &mut NlMsgHdr = unsafe {
+                &mut *nlh_ptr
             };
             error!(">>> nlmsg: {:?}", nlh);
             if nlh.nlmsg_flags > 0 {
-                netlink_ack(&s, &nlh);
+                netlink_ack(&s, nlh);
             }
             ans
         }
