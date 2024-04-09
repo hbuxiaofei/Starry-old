@@ -46,22 +46,16 @@ pub fn netlink_ack(sk: &NetlinkSocket, nlh: &mut NlMsgHdr)
 	//		   (nlh)->nlmsg_len >= sizeof(struct nlmsghdr) && \
 	//		   (nlh)->nlmsg_len <= (len))
 
-    let mut done_msg: [u8; 20] = [0; 20];
-    done_msg[0] = 16;  // nlmsg_len: sizeof(struct nlmsghdr)
-    done_msg[4] = 0x3; // nlmsg_type: NLMSG_DONE
-    done_msg[6] = 65;  // 'A'
-    done_msg[7] = 66;  // 'B'
-    done_msg[8] = 67;  // 'C'
-    done_msg[9] = 68;  // 'D'
-    done_msg[10] = 69; // 'E'
-
-   if let Ok(msg_type) = RtmType::try_from(nlh.nlmsg_type) {
+    if let Ok(msg_type) = RtmType::try_from(nlh.nlmsg_type) {
         if msg_type == RtmType::RTM_GETLINK || msg_type == RtmType::RTM_GETADDR {
             let mut skb = SkBuff::new();
             let _ = rtnl_getlink( &mut skb, nlh);
             error!(">>> recv nlmsg_len:{} skb: {:?}", nlh.nlmsg_len, skb.get_data());
-			let _ = sk.fill_tx(skb.get_data());
-            // let _ = sk.fill_tx(&done_msg);
+            let _ = sk.fill_tx(skb.get_data());
+
+            let mut skb_done = SkBuff::new();
+            nlmsg_put(&mut skb_done, 0, nlh.nlmsg_seq + 1, 0x3, 4, 0); // NLMSG_DONE 0x3
+            let _ = sk.fill_tx(skb_done.get_data());
         }
     };
 }

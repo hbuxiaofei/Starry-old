@@ -1,6 +1,7 @@
 use num_enum::TryFromPrimitive;
 extern crate alloc;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 use alloc::collections::VecDeque;
 use core::cmp::min;
 use axtask::yield_now;
@@ -32,36 +33,46 @@ pub enum NetlinkProto {
 }
 
 
-struct NetlinkBuffer<T> {
-    buffer: VecDeque<T>,
-    capacity: usize,
+#[derive(Debug)]
+struct NetlinkFrame {
+    pub data: Vec<u8>,
 }
 
-impl<T> NetlinkBuffer<T> {
-    fn new(capacity: usize) -> Self {
-        NetlinkBuffer {
-            buffer: VecDeque::with_capacity(capacity),
-            capacity,
+#[derive(Debug)]
+struct NetlinkFrameQueue {
+    pub buffer: Arc<Mutex<VecDeque<NetlinkFrame>>>,
+}
+
+#[allow(dead_code)]
+impl NetlinkFrameQueue {
+   fn new() -> Self {
+        NetlinkFrameQueue {
+            buffer: Arc::new(Mutex::new(VecDeque::new())),
         }
     }
 
-    fn push(&mut self, element: T) {
-        if self.buffer.len() == self.capacity {
-            self.buffer.pop_front();
-        }
-        self.buffer.push_back(element);
+    fn push_frame(&self, frame: NetlinkFrame) {
+        self.buffer.lock().push_back(frame);
     }
 
-    fn pop(&mut self) -> Option<T> {
-        self.buffer.pop_front()
+    fn push_front(&self, frame: NetlinkFrame) {
+        self.buffer.lock().push_front(frame);
+    }
+
+    fn pop_frame(&self) -> Option<NetlinkFrame> {
+        self.buffer.lock().pop_front()
+    }
+
+    fn pop_back(&self) -> Option<NetlinkFrame> {
+        self.buffer.lock().pop_back()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.buffer.lock().is_empty()
     }
 
     fn len(&self) -> usize {
-        self.buffer.len()
-    }
-
-    fn capacity(&self) -> usize {
-        self.capacity
+        self.buffer.lock().len()
     }
 }
 
@@ -69,8 +80,8 @@ pub struct NetlinkSocket {
     pub protocol: NetlinkProto,
     pub nl_groups: u32,
     pub nl_pid: u32,
-    rx_buffer: Arc<Mutex<NetlinkBuffer<u8>>>,
-    tx_buffer: Arc<Mutex<NetlinkBuffer<u8>>>,
+    rx_buffer: NetlinkFrameQueue,
+    tx_buffer: NetlinkFrameQueue,
 }
 
 impl NetlinkSocket {
@@ -79,8 +90,8 @@ impl NetlinkSocket {
             protocol,
             nl_groups: 64, // RTNLGRP_MAX ?
             nl_pid: 0,
-            rx_buffer: Arc::new(Mutex::new(NetlinkBuffer::new(1024))),
-            tx_buffer: Arc::new(Mutex::new(NetlinkBuffer::new(1024))),
+            rx_buffer: NetlinkFrameQueue::new(),
+            tx_buffer: NetlinkFrameQueue::new(),
         }
     }
 
@@ -90,40 +101,52 @@ impl NetlinkSocket {
     }
 
     pub fn send(&self, buf: &[u8]) -> AxResult<usize> {
-        let mut rx = self.rx_buffer.lock();
-        for byte in buf.iter() {
-            rx.push(*byte);
-        }
+        let frame = NetlinkFrame {
+            data: buf.to_vec()
+        };
+
+        self.rx_buffer.push_frame(frame);
+
         Ok(buf.len())
     }
 
     pub fn fill_tx(&self, buf: &[u8]) -> AxResult<usize> {
-        let mut tx = self.tx_buffer.lock();
-        let length = min(buf.len(), tx.capacity() - tx.len());
-        for i in 0..length {
-            tx.push(buf[i]);
-        }
-       Ok(length)
+        let frame = NetlinkFrame {
+            data: buf.to_vec()
+        };
+
+        self.tx_buffer.push_frame(frame);
+
+        Ok(buf.len())
     }
 
     pub fn recv_from(&self, buf: &mut [u8]) -> AxResult<usize> {
-       //  loop {
-       //      let len = {
-       //          let tx = self.tx_buffer.lock();
-       //          tx.len()
-       //      };
-       //      if len == 0 {
-       //          yield_now();
-       //          continue;
-       //      }
-       //      break;
-       //  }
-
-        let mut tx = self.tx_buffer.lock();
-        let length = min(buf.len(), tx.len());
-        for i in 0..length {
-            buf[i] = tx.pop().unwrap();
+        loop {
+            let len = {
+                self.tx_buffer.len()
+            };
+            if len == 0 {
+                yield_now();
+                continue;
+            }
+            break;
         }
-       Ok(length)
+
+        let mut length = 0;
+        if let Some(frame) = self.tx_buffer.pop_frame() {
+            length = min(buf.len(), frame.data.len());
+            if length < frame.data.len() {
+                let left = &frame.data[length..frame.data.len()];
+                let left_frame = NetlinkFrame {
+                    data: left.to_vec()
+                };
+                self.tx_buffer.push_front(left_frame);
+            }
+            for i in 0..length {
+                buf[i] = frame.data[i];
+            }
+        }
+
+        Ok(length)
     }
 }

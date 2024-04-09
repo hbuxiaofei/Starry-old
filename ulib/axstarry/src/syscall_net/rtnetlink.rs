@@ -1,5 +1,5 @@
 extern crate alloc;
-use alloc::vec::Vec;
+use alloc::{vec, vec::Vec};
 
 use axerrno::{AxError, AxResult};
 use num_enum::TryFromPrimitive;
@@ -207,9 +207,29 @@ fn nla_put_string(skb: &mut SkBuff, attrtype: IflaSpec, s: &str) {
     nla_put_u8(skb, attrtype, &bytes);
 }
 
+pub fn nlmsg_put(skb: &mut SkBuff, portid: u32, seq: u32, ty: u16, len: u32, flags: u16) {
+    let nlh = NlMsgHdr {
+        nlmsg_type: ty,
+        nlmsg_len: len + core::mem::size_of::<NlMsgHdr>() as u32,
+        nlmsg_flags: flags,
+        nlmsg_pid: portid,
+        nlmsg_seq: seq,
+    };
+
+    let ptr = &nlh as *const NlMsgHdr as *const u8;
+    let nlh_buf = unsafe {
+        core::slice::from_raw_parts(ptr, core::mem::size_of::<NlMsgHdr>())
+    };
+    skb.skb_put(nlh_buf);
+
+    let v: Vec<u8> = vec![0; len as usize];
+    skb.skb_put(&v[..]);
+}
+
+
 pub fn rtnl_getlink(skb: &mut SkBuff, nlh: &mut NlMsgHdr) -> AxResult {
     nlh.nlmsg_type = RtmType::RTM_NEWLINK as u16;
-   let ptr = nlh as *const NlMsgHdr as *const u8;
+    let ptr = nlh as *const NlMsgHdr as *const u8;
     let nlh_buf = unsafe {
         core::slice::from_raw_parts(ptr, core::mem::size_of::<NlMsgHdr>())
     };
