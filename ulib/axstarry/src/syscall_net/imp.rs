@@ -50,6 +50,8 @@ pub fn syscall_socket(args: [usize; 6]) -> SyscallResult {
 
     debug!("[socket()] create socket {fd}");
 
+    error!(">>> [socket()] create socket {fd}");
+
     Ok(fd as isize)
 }
 
@@ -62,6 +64,8 @@ pub fn syscall_bind(args: [usize; 6]) -> SyscallResult {
     let addr = args[1] as *const u8;
     let _addr_len = args[2];
     let curr = current_process();
+
+    error!(">>> syscall bind called ...");
 
     let file = match curr.fd_manager.fd_table.lock().get(fd) {
         Some(Some(file)) => file.clone(),
@@ -458,7 +462,7 @@ pub fn syscall_set_sock_opt(args: [usize; 6]) -> SyscallResult {
     let opt_value = args[3] as *const u8;
     let opt_len = args[4] as u32;
 
-    error!("syscall setsockopt called ...");
+    error!(">>> syscall setsockopt called ...");
 
     let Ok(level) = SocketOptionLevel::try_from(level) else {
         error!("[setsockopt()] level {level} not supported");

@@ -315,6 +315,7 @@ pub fn rtnl_dump_ifinfo(skb: &mut SkBuff, nlh: &mut NlMsgHdr) -> AxResult {
     skb.skb_put(ifaddrmsg_buf);
 
     nla_put_string(skb, IfaSpec::IFA_LABEL as u16, "eth0");
+    nla_put_u32(skb, IfaSpec::IFA_LOCAL as u16, 0);
     nla_put_u32(skb, IfaSpec::IFA_ADDRESS as u16, 0);
 
     nlmsg_end(skb, nlh);
