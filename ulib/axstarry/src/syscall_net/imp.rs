@@ -321,6 +321,7 @@ pub fn syscall_sendto(args: [usize; 6]) -> SyscallResult {
     let inner = socket.inner.lock();
     let send_result = match &*inner {
         SocketInner::Udp(s) => {
+            error!(">>> udp sendto ");
             // udp socket not bound
             if s.local_addr().is_err() {
                 s.bind(into_core_sockaddr(SocketAddr::new_ipv4(
@@ -341,6 +342,7 @@ pub fn syscall_sendto(args: [usize; 6]) -> SyscallResult {
             }
         }
         SocketInner::Tcp(s) => {
+            error!(">>> tcp sendto ");
             if addr.is_some() {
                 return Err(SyscallError::EISCONN);
             }
@@ -352,17 +354,17 @@ pub fn syscall_sendto(args: [usize; 6]) -> SyscallResult {
             s.send(buf)
         }
         SocketInner::Netlink(s) => {
-            let ans = s.send(buf);
+            error!(">>> netlink sendto ");
+            // let ans = s.send(buf);
             let buf_ptr: *const u8 = buf.as_ptr();
             let nlh_ptr: *mut NlMsgHdr = buf_ptr as *mut NlMsgHdr;
             let nlh: &mut NlMsgHdr = unsafe {
                 &mut *nlh_ptr
             };
-            error!(">>> nlmsg: {:?}", nlh);
             if nlh.nlmsg_flags > 0 {
                 netlink_ack(&s, nlh);
             }
-            ans
+            Ok(buf.len())
         }
     };
 
@@ -455,6 +457,9 @@ pub fn syscall_set_sock_opt(args: [usize; 6]) -> SyscallResult {
     let opt_name = args[2];
     let opt_value = args[3] as *const u8;
     let opt_len = args[4] as u32;
+
+    error!("syscall setsockopt called ...");
+
     let Ok(level) = SocketOptionLevel::try_from(level) else {
         error!("[setsockopt()] level {level} not supported");
         unimplemented!();

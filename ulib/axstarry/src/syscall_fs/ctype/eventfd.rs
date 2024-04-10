@@ -5,6 +5,7 @@ use axerrno::{AxError, AxResult};
 use axfs::api::{FileIO, FileIOType, SeekFrom};
 use axsync::Mutex;
 use axtask::yield_now;
+use axlog::error;
 
 pub struct EventfdFile {
     pub inner: Arc<Mutex<EventfdFileInner>>,
@@ -12,12 +13,14 @@ pub struct EventfdFile {
 
 struct EventfdCtx {
     count: u64,
+    flags: u32,
 }
 
 impl EventfdCtx {
-    pub fn new() -> Self {
+    pub fn new(count: u64, flags: u32) -> Self {
         Self {
-            count: 0,
+            count,
+            flags,
         }
     }
 }
@@ -27,10 +30,10 @@ pub struct EventfdFileInner {
 }
 
 impl EventfdFile {
-    pub fn new() -> Self {
+    pub fn new(count: u64, flags: u32) -> Self {
         Self {
             inner: Arc::new(Mutex::new(EventfdFileInner {
-                ctx: EventfdCtx::new(),
+                ctx: EventfdCtx::new(count, flags),
             })),
         }
     }
@@ -38,6 +41,7 @@ impl EventfdFile {
 
 impl FileIO for EventfdFile {
     fn read(&self, buf: &mut [u8]) -> AxResult<usize> {
+        error!(">>> eventfd read start");
         let mut cnt = 0;
         loop {
             let mut inner = self.inner.lock();
@@ -53,12 +57,18 @@ impl FileIO for EventfdFile {
         let bytes = cnt.to_ne_bytes();
         buf.copy_from_slice(&bytes);
 
+        error!(">>> eventfd read over");
+
         Ok(size_of::<u64>())
     }
     fn write(&self, buf: &[u8]) -> AxResult<usize> {
+        error!(">>> eventfd write start");
+
         let mut inner = self.inner.lock();
         let ucnt: u64 = u64::from_ne_bytes(buf.try_into().unwrap());
         inner.ctx.count += ucnt;
+
+        error!(">>> eventfd write over");
 
         Ok(size_of::<u64>())
     }

@@ -1,6 +1,6 @@
+use alloc::vec::Vec;
 use super::rtnetlink::*;
 use axnet::NetlinkSocket;
-use axlog::error;
 use num_enum::TryFromPrimitive;
 use super::rtnetlink::*;
 
@@ -47,16 +47,43 @@ pub fn netlink_ack(sk: &NetlinkSocket, nlh: &mut NlMsgHdr)
 	//		   (nlh)->nlmsg_len <= (len))
 
     if let Ok(msg_type) = RtmType::try_from(nlh.nlmsg_type) {
-        if msg_type == RtmType::RTM_GETLINK || msg_type == RtmType::RTM_GETADDR {
+        if msg_type == RtmType::RTM_GETLINK {
             let mut skb = SkBuff::new();
             let _ = rtnl_getlink( &mut skb, nlh);
-            error!(">>> recv nlmsg_len:{} skb: {:?}", nlh.nlmsg_len, skb.get_data());
-            let _ = sk.fill_tx(skb.get_data());
+            // let _ = sk.fill_tx(skb.get_data());
+
+            let mut skb_done = SkBuff::new();
+            nlmsg_put(&mut skb_done, 0, nlh.nlmsg_seq + 1, 0x3, 0, 0); // NLMSG_DONE 0x3
+            // let _ = sk.fill_tx(skb_done.get_data());
+
+            let tx_buf1 = skb.get_data();
+            let tx_buf2 = skb_done.get_data();
+
+            let mut combined_vec = Vec::new();
+            combined_vec.extend_from_slice(tx_buf1);
+            combined_vec.extend_from_slice(tx_buf2);
+
+            let combined_slice: &[u8] = &combined_vec;
+            let _ = sk.fill_tx( combined_slice);
+        } else if msg_type == RtmType::RTM_GETADDR {
+            let mut skb = SkBuff::new();
+            let _ = rtnl_dump_ifinfo( &mut skb, nlh);
+            // let _ = sk.fill_tx(skb.get_data());
 
             let mut skb_done = SkBuff::new();
             nlmsg_put(&mut skb_done, 0, nlh.nlmsg_seq + 1, 0x3, 4, 0); // NLMSG_DONE 0x3
-            let _ = sk.fill_tx(skb_done.get_data());
-        }
+            // let _ = sk.fill_tx(skb_done.get_data());
+
+            let tx_buf1 = skb.get_data();
+            let tx_buf2 = skb_done.get_data();
+
+            let mut combined_vec = Vec::new();
+            combined_vec.extend_from_slice(tx_buf1);
+            combined_vec.extend_from_slice(tx_buf2);
+
+            let combined_slice: &[u8] = &combined_vec;
+            let _ = sk.fill_tx( combined_slice);
+       }
     };
 }
 

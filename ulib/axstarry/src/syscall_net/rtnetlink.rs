@@ -4,6 +4,12 @@ use alloc::{vec, vec::Vec};
 use axerrno::{AxError, AxResult};
 use num_enum::TryFromPrimitive;
 
+macro_rules! netlink_align {
+    ($len:expr) => {
+        (($len + 3) & !3)
+    };
+}
+
 #[derive(TryFromPrimitive, PartialEq, Eq, Clone, Debug)]
 #[repr(u16)]
 #[allow(non_camel_case_types)]
@@ -30,6 +36,20 @@ pub enum IflaSpec {
     IFLA_QDISC = 6,
     IFLA_STATS = 7,
     IFLA_COST = 8,
+}
+
+#[derive(TryFromPrimitive, PartialEq, Eq, Clone, Debug)]
+#[repr(u16)]
+#[allow(non_camel_case_types)]
+pub enum IfaSpec {
+    IFA_UNSPEC = 0,
+    IFA_ADDRESS = 1,
+    IFA_LOCAL = 2,
+    IFA_LABEL = 3,
+    IFA_BROADCAST = 4,
+    IFA_ANYCAST = 5,
+    IFA_CACHEINFO = 6,
+    IFA_MULTICAST = 7,
 }
 
 pub struct SkBuff {
@@ -94,6 +114,7 @@ impl SkBuff {
 
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug, Default)]
+#[repr(align(4))]
 #[repr(C)]
 pub struct NlMsgHdr {
     pub nlmsg_len: u32,
@@ -169,6 +190,13 @@ struct RtnlLinkStats {
 }
 
 fn nlmsg_end(skb: &mut SkBuff, nlh: &mut NlMsgHdr) -> usize {
+    let len = skb.length();
+    let align = netlink_align!(len) - len;
+    if align > 0 {
+        let v: Vec<u8> = vec![0; align];
+        skb.push_data(&v);
+   }
+
     nlh.nlmsg_len = skb.length() as u32;
 
     let ptr: *const u8 = skb.get_data().as_ptr();
@@ -181,11 +209,11 @@ fn nlmsg_end(skb: &mut SkBuff, nlh: &mut NlMsgHdr) -> usize {
     skb.length()
 }
 
-fn nla_put_u8(skb: &mut SkBuff, attrtype: IflaSpec, buf: &[u8]) {
+fn nla_put_u8(skb: &mut SkBuff, attrtype: u16, buf: &[u8]) {
     let mut rtattr = RtAddr {
         ..Default::default()
     };
-    rtattr.rta_type = attrtype as u16;
+    rtattr.rta_type = attrtype;
     rtattr.rta_len = core::mem::size_of::<RtAddr>() as u16 + buf.len() as u16;
 
     let ptr = &rtattr as *const RtAddr as *const u8;
@@ -197,12 +225,12 @@ fn nla_put_u8(skb: &mut SkBuff, attrtype: IflaSpec, buf: &[u8]) {
     skb.skb_put(buf);
 }
 
-fn nla_put_u32(skb: &mut SkBuff, attrtype: IflaSpec, value: u32) {
+fn nla_put_u32(skb: &mut SkBuff, attrtype: u16, value: u32) {
     let bytes: [u8; 4] = value.to_ne_bytes();
     nla_put_u8(skb, attrtype, &bytes);
 }
 
-fn nla_put_string(skb: &mut SkBuff, attrtype: IflaSpec, s: &str) {
+fn nla_put_string(skb: &mut SkBuff, attrtype: u16, s: &str) {
     let bytes = s.as_bytes();
     nla_put_u8(skb, attrtype, &bytes);
 }
@@ -222,7 +250,7 @@ pub fn nlmsg_put(skb: &mut SkBuff, portid: u32, seq: u32, ty: u16, len: u32, fla
     };
     skb.skb_put(nlh_buf);
 
-    let v: Vec<u8> = vec![0; len as usize];
+    let v: Vec<u8> = vec![0; netlink_align!(len) as usize];
     skb.skb_put(&v[..]);
 }
 
@@ -244,9 +272,9 @@ pub fn rtnl_getlink(skb: &mut SkBuff, nlh: &mut NlMsgHdr) -> AxResult {
     };
     skb.skb_put(ifinfomsg_buf);
 
-    nla_put_string(skb, IflaSpec::IFLA_IFNAME, "eth0");
+    nla_put_string(skb, IflaSpec::IFLA_IFNAME as u16, "eth0");
 
-    nla_put_u32(skb, IflaSpec::IFLA_MTU, 1500);
+    nla_put_u32(skb, IflaSpec::IFLA_MTU as u16, 1500);
 
     let mut link_state = RtnlLinkStats {
         ..Default::default()
@@ -259,10 +287,10 @@ pub fn rtnl_getlink(skb: &mut SkBuff, nlh: &mut NlMsgHdr) -> AxResult {
     let link_state_buf = unsafe {
         core::slice::from_raw_parts(ptr, core::mem::size_of::<RtnlLinkStats>())
     };
-    nla_put_u8(skb, IflaSpec::IFLA_STATS, &link_state_buf);
+    nla_put_u8(skb, IflaSpec::IFLA_STATS as u16, &link_state_buf);
 
     let mac: [u8; 6] = [0x00, 0x0c, 0x29, 0xe9, 0xf2, 0x2e];
-    nla_put_u8(skb, IflaSpec::IFLA_ADDRESS, &mac);
+    nla_put_u8(skb, IflaSpec::IFLA_ADDRESS as u16, &mac);
 
     nlmsg_end(skb, nlh);
 
@@ -270,5 +298,26 @@ pub fn rtnl_getlink(skb: &mut SkBuff, nlh: &mut NlMsgHdr) -> AxResult {
 }
 
 pub fn rtnl_dump_ifinfo(skb: &mut SkBuff, nlh: &mut NlMsgHdr) -> AxResult {
+    nlh.nlmsg_type = RtmType::RTM_NEWADDR as u16;
+    let ptr = nlh as *const NlMsgHdr as *const u8;
+    let nlh_buf = unsafe {
+        core::slice::from_raw_parts(ptr, core::mem::size_of::<NlMsgHdr>())
+    };
+    skb.skb_put(nlh_buf);
+
+    let ifaddrmsg = IfAddrMsg {
+        ..Default::default()
+    };
+    let ptr = &ifaddrmsg as *const IfAddrMsg as *const u8;
+    let ifaddrmsg_buf = unsafe {
+        core::slice::from_raw_parts(ptr, core::mem::size_of::<IfAddrMsg>())
+    };
+    skb.skb_put(ifaddrmsg_buf);
+
+    nla_put_string(skb, IfaSpec::IFA_LABEL as u16, "eth0");
+    nla_put_u32(skb, IfaSpec::IFA_ADDRESS as u16, 0);
+
+    nlmsg_end(skb, nlh);
+
     Ok(())
 }

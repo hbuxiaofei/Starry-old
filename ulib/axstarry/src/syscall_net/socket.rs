@@ -446,10 +446,15 @@ impl Socket {
     pub fn new(domain: Domain, socket_type: SocketType, protocol: usize) -> Self {
         let inner = match socket_type {
             SocketType::SOCK_STREAM | SocketType::SOCK_SEQPACKET => {
+                error!(">>>>>>>>> socket_type is: SOCK_STREAM");
                 SocketInner::Tcp(TcpSocket::new())
             }
-            SocketType::SOCK_DGRAM => SocketInner::Udp(UdpSocket::new()),
+            SocketType::SOCK_DGRAM => {
+                error!(">>>>>>>>> socket_type is: SOCK_DGRAM: {}", protocol);
+                SocketInner::Udp(UdpSocket::new())
+            }
             SocketType::SOCK_RAW => {
+                error!(">>>>>>>>> socket_type is: SOCK_RAW");
                 let Ok(proto) = NetlinkProto::try_from(protocol) else {
                     unimplemented!()
                 };
@@ -531,9 +536,18 @@ impl Socket {
     pub fn bind(&self, addr: SocketAddr) -> AxResult {
         let mut inner = self.inner.lock();
         match &mut *inner {
-            SocketInner::Tcp(s) => s.bind(into_core_sockaddr(addr.into())),
-            SocketInner::Udp(s) => s.bind(into_core_sockaddr(addr.into())),
-            SocketInner::Netlink(s) => s.bind(addr.nl_groups),
+            SocketInner::Tcp(s) => {
+                error!(">>> tcp bind ");
+                s.bind(into_core_sockaddr(addr.into()))
+            }
+            SocketInner::Udp(s) => {
+                error!(">>> udp bind ");
+                s.bind(into_core_sockaddr(addr.into()))
+            }
+            SocketInner::Netlink(s) => {
+                error!(">>> netlink bind ");
+                s.bind(addr.nl_groups)
+            }
         }
     }
 
@@ -625,6 +639,7 @@ impl Socket {
         let inner = self.inner.lock();
         match &*inner {
             SocketInner::Tcp(s) => {
+                error!(">>> tcp recv_from ");
                 let addr = s.peer_addr()?;
 
                 match self.get_recv_timeout() {
@@ -634,17 +649,21 @@ impl Socket {
                 .map(|len| (len, from_core_sockaddr(addr)))
                 .map(|(len, sa)| (len, SocketAddr::from(sa)))
             }
-            SocketInner::Udp(s) => match self.get_recv_timeout() {
-                Some(time) => s
-                    .recv_from_timeout(buf, time.turn_to_ticks())
-                    .map(|(val, addr)| (val, from_core_sockaddr(addr)))
-                    .map(|(val, sa)| (val, SocketAddr::from(sa))),
-                None => s
-                    .recv_from(buf)
-                    .map(|(val, addr)| (val, from_core_sockaddr(addr)))
-                    .map(|(val, sa)| (val, SocketAddr::from(sa))),
-            },
+            SocketInner::Udp(s) => {
+                error!(">>> udp recv_from ");
+                match self.get_recv_timeout() {
+                    Some(time) => s
+                        .recv_from_timeout(buf, time.turn_to_ticks())
+                        .map(|(val, addr)| (val, from_core_sockaddr(addr)))
+                        .map(|(val, sa)| (val, SocketAddr::from(sa))),
+                    None => s
+                        .recv_from(buf)
+                        .map(|(val, addr)| (val, from_core_sockaddr(addr)))
+                        .map(|(val, sa)| (val, SocketAddr::from(sa))),
+                }
+            }
             SocketInner::Netlink(s) => {
+                    error!(">>> netlink recv_from ");
                     s.recv_from(buf)
                     .map(|val| (val, SocketAddr::new_netlink(s.nl_groups)))
             },
