@@ -30,7 +30,7 @@ impl FilePath {
             // 如果原始路径以 '/' 结尾，那么canonicalize后的路径也应该以 '/' 结尾
             new_path.push('/');
         }
-        // let new_path = real_path(&new_path);
+        let new_path = real_path(&new_path);
         // assert!(!path.ends_with("/"), "path should not end with '/', link only support file");      // 链接只支持文件
         Ok(Self(new_path))
     }
@@ -158,10 +158,7 @@ pub fn real_path(src_path: &String) -> String {
     let map = LINK_PATH_MAP.lock();
     // 找到对应的链接
     match map.get(src_path) {
-        Some(dest_path) => {
-            // error!("src_path: {}, dest_path: {}", src_path, dest_path);
-            dest_path.clone()
-        }
+        Some(dest_path) => dest_path.clone(),
         None => {
             // 特判gcc的文件夹链接情况，即将一个文件夹前缀换成另一个文件夹前缀
             static GCC_DIR_SRC: &str =
@@ -275,7 +272,10 @@ pub fn create_link(src_path: &FilePath, dest_path: &FilePath) -> bool {
     }
 
     // 创建新链接
-    map.insert(src_path.path().to_string(), dest_path.path().to_string().clone());
+    map.insert(
+        src_path.path().to_string(),
+        dest_path.path().to_string().clone(),
+    );
 
     // 更新链接计数
     let mut count_map = LINK_COUNT_MAP.lock();
