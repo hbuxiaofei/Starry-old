@@ -418,9 +418,6 @@ pub fn syscall_open(args: [usize; 6]) -> SyscallResult {
 pub fn syscall_close(args: [usize; 6]) -> SyscallResult {
     let fd = args[0];
     info!("Into syscall_close. fd: {}", fd);
-
-    error!(">>> Into syscall_close. fd: {}", fd);
-
     let process = current_process();
     let mut fd_table = process.fd_manager.fd_table.lock();
     if fd >= fd_table.len() {

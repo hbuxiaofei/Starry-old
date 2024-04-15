@@ -1,4 +1,5 @@
 use core::net::SocketAddr;
+use core::ops::DerefMut;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use axerrno::{ax_err, ax_err_type, AxError, AxResult};
@@ -6,6 +7,11 @@ use axhal::time::current_ticks;
 use axio::{PollState, Read, Write};
 use axsync::Mutex;
 use spin::RwLock;
+
+use crate::net_impl::{current_time_nanos, NANOS_PER_MICROS};
+use crate::net_impl::{LOOPBACK, LOOPBACK_DEV};
+use smoltcp::time::Instant;
+use smoltcp::wire::IpAddress as IpAddr;
 
 use smoltcp::iface::SocketHandle;
 use smoltcp::socket::udp::{self, BindError, SendError};
@@ -190,11 +196,11 @@ impl UdpSocket {
 
     /// Close the socket.
     pub fn shutdown(&self) -> AxResult {
+        SOCKET_SET.poll_interfaces();
         SOCKET_SET.with_socket_mut::<udp::Socket, _, _>(self.handle, |socket| {
             debug!("UDP socket {}: shutting down", self.handle);
             socket.close();
         });
-        SOCKET_SET.poll_interfaces();
         Ok(())
     }
 
@@ -212,6 +218,21 @@ impl UdpSocket {
                 writable: socket.can_send(),
             })
         })
+    }
+
+    pub fn set_socket_ttl(&self, ttl: u8) {
+        SOCKET_SET.with_socket_mut::<udp::Socket, _, _>(self.handle, |socket| {
+            socket.set_hop_limit(Some(ttl))
+        });
+    }
+
+    pub fn add_membership(&self, multicast_addr: IpAddr, interface_addr: IpAddr) {
+        let timestamp = Instant::from_micros_const((current_time_nanos() / NANOS_PER_MICROS) as i64);
+        error!(
+            ">>> setsockopt IP_ADD_MEMBERSHIP: multiaddr: {}, interfaceaddr: {}",
+            multicast_addr, interface_addr
+        );
+        let _ = LOOPBACK.lock().join_multicast_group(LOOPBACK_DEV.lock().deref_mut(), multicast_addr, timestamp);
     }
 }
 

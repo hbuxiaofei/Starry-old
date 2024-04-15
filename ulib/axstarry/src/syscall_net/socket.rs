@@ -18,7 +18,7 @@ use axnet::{
 use axsync::Mutex;
 use num_enum::TryFromPrimitive;
 
-use crate::TimeVal;
+use crate::{SyscallError, SyscallResult, TimeVal};
 
 pub const SOCKET_TYPE_MASK: usize = 0xFF;
 
@@ -71,6 +71,16 @@ pub enum SocketOptionLevel {
 #[derive(TryFromPrimitive, Debug)]
 #[repr(usize)]
 #[allow(non_camel_case_types)]
+pub enum IpOption {
+    IP_MULTICAST_IF = 32,
+    IP_MULTICAST_TTL = 33,
+    IP_MULTICAST_LOOP = 34,
+    IP_ADD_MEMBERSHIP = 35,
+}
+
+#[derive(TryFromPrimitive, Debug)]
+#[repr(usize)]
+#[allow(non_camel_case_types)]
 pub enum SocketOption {
     SO_REUSEADDR = 2,
     SO_ERROR = 4,
@@ -79,6 +89,7 @@ pub enum SocketOption {
     SO_RCVBUF = 8,
     SO_KEEPALIVE = 9,
     SO_RCVTIMEO = 20,
+    SO_SNDTIMEO = 21,
 }
 
 #[derive(TryFromPrimitive, PartialEq)]
@@ -91,8 +102,55 @@ pub enum TcpSocketOption {
     TCP_CONGESTION = 13,
 }
 
+impl IpOption {
+    pub fn set(&self, socket: &Socket, opt: &[u8]) -> SyscallResult {
+        match self {
+            IpOption::IP_MULTICAST_IF => {
+                // 我们只会使用LOOPBACK作为多播接口
+                Ok((0))
+            }
+            IpOption::IP_MULTICAST_TTL => {
+                let mut inner = socket.inner.lock();
+                match &mut *inner {
+                    SocketInner::Udp(s) => {
+                        let ttl = u8::from_ne_bytes(<[u8; 1]>::try_from(&opt[0..1]).unwrap());
+                        s.set_socket_ttl(ttl as u8);
+                        Ok((0))
+                    }
+                    _ => panic!("setsockopt IP_MULTICAST_TTL on a non-udp socket"),
+                }
+            }
+            IpOption::IP_MULTICAST_LOOP => {
+                Ok((0))
+            }
+            IpOption::IP_ADD_MEMBERSHIP => {
+                let multicast_addr = IpAddr::v4(
+                    opt[0],
+                    opt[1],
+                    opt[2],
+                    opt[3],
+                );
+                let interface_addr = IpAddr::v4(
+                    opt[4],
+                    opt[5],
+                    opt[6],
+                    opt[7],
+                );
+                let mut inner = socket.inner.lock();
+                match &mut *inner {
+                    SocketInner::Udp(s) => {
+                        s.add_membership(multicast_addr, interface_addr)
+                    }
+                    _ => panic!("setsockopt IP_ADD_MEMBERSHIP on a non-udp socket"),
+                }
+                Ok((0))
+            }
+        }
+    }
+}
+
 impl SocketOption {
-    pub fn set(&self, socket: &Socket, opt: &[u8]) {
+    pub fn set(&self, socket: &Socket, opt: &[u8]) -> SyscallResult {
         match self {
             SocketOption::SO_REUSEADDR => {
                 if opt.len() < 4 {
@@ -103,6 +161,7 @@ impl SocketOption {
 
                 socket.set_reuse_addr(opt_value != 0);
                 // socket.reuse_addr = opt_value != 0;
+                Ok((0))
             }
             SocketOption::SO_DONTROUTE => {
                 if opt.len() < 4 {
@@ -113,6 +172,7 @@ impl SocketOption {
 
                 socket.set_reuse_addr(opt_value != 0);
                 // socket.reuse_addr = opt_value != 0;
+                Ok((0))
             }
             SocketOption::SO_SNDBUF => {
                 if opt.len() < 4 {
@@ -123,6 +183,7 @@ impl SocketOption {
 
                 socket.set_send_buf_size(opt_value as u64);
                 // socket.send_buf_size = opt_value as usize;
+                Ok((0))
             }
             SocketOption::SO_RCVBUF => {
                 if opt.len() < 4 {
@@ -133,6 +194,7 @@ impl SocketOption {
 
                 socket.set_recv_buf_size(opt_value as u64);
                 // socket.recv_buf_size = opt_value as usize;
+                Ok((0))
             }
             SocketOption::SO_KEEPALIVE => {
                 if opt.len() < 4 {
@@ -164,6 +226,7 @@ impl SocketOption {
                 drop(inner);
                 socket.set_recv_buf_size(opt_value as u64);
                 // socket.recv_buf_size = opt_value as usize;
+                Ok((0))
             }
             SocketOption::SO_RCVTIMEO => {
                 if opt.len() < size_of::<TimeVal>() {
@@ -176,9 +239,13 @@ impl SocketOption {
                 } else {
                     Some(timeout)
                 });
+                Ok((0))
             }
             SocketOption::SO_ERROR => {
                 panic!("can't set SO_ERROR");
+            }
+            SocketOption::SO_SNDTIMEO => {
+                Err(SyscallError::EPERM)
             }
         }
     }
@@ -284,6 +351,9 @@ impl SocketOption {
             }
             SocketOption::SO_ERROR => {
                 // 当前没有存储错误列表，因此不做处理
+            }
+          SocketOption::SO_SNDTIMEO => {
+                panic!("unimplemented!")
             }
         }
     }
@@ -446,15 +516,12 @@ impl Socket {
     pub fn new(domain: Domain, socket_type: SocketType, protocol: usize) -> Self {
         let inner = match socket_type {
             SocketType::SOCK_STREAM | SocketType::SOCK_SEQPACKET => {
-                error!(">>>>>>>>> socket_type is: SOCK_STREAM");
                 SocketInner::Tcp(TcpSocket::new())
             }
             SocketType::SOCK_DGRAM => {
-                error!(">>>>>>>>> socket_type is: SOCK_DGRAM: {}", protocol);
                 SocketInner::Udp(UdpSocket::new())
             }
             SocketType::SOCK_RAW => {
-                error!(">>>>>>>>> socket_type is: SOCK_RAW");
                 let Ok(proto) = NetlinkProto::try_from(protocol) else {
                     unimplemented!()
                 };
@@ -537,15 +604,13 @@ impl Socket {
         let mut inner = self.inner.lock();
         match &mut *inner {
             SocketInner::Tcp(s) => {
-                error!(">>> tcp bind ");
                 s.bind(into_core_sockaddr(addr.into()))
             }
             SocketInner::Udp(s) => {
-                error!(">>> udp bind ");
-                s.bind(into_core_sockaddr(addr.into()))
+                let ret = s.bind(into_core_sockaddr(addr.into()));
+                ret
             }
             SocketInner::Netlink(s) => {
-                error!(">>> netlink bind ");
                 s.bind(addr.nl_groups)
             }
         }
@@ -639,7 +704,6 @@ impl Socket {
         let inner = self.inner.lock();
         match &*inner {
             SocketInner::Tcp(s) => {
-                error!(">>> tcp recv_from ");
                 let addr = s.peer_addr()?;
 
                 match self.get_recv_timeout() {
@@ -650,20 +714,40 @@ impl Socket {
                 .map(|(len, sa)| (len, SocketAddr::from(sa)))
             }
             SocketInner::Udp(s) => {
-                error!(">>> udp recv_from ");
                 match self.get_recv_timeout() {
-                    Some(time) => s
-                        .recv_from_timeout(buf, time.turn_to_ticks())
-                        .map(|(val, addr)| (val, from_core_sockaddr(addr)))
-                        .map(|(val, sa)| (val, SocketAddr::from(sa))),
-                    None => s
-                        .recv_from(buf)
-                        .map(|(val, addr)| (val, from_core_sockaddr(addr)))
-                        .map(|(val, sa)| (val, SocketAddr::from(sa))),
+                    Some(time) => {
+                        let ret = s.recv_from_timeout(buf, time.turn_to_ticks());
+
+                        error!(">>>+ udp recv_from ");
+                        let valid_utf8_strings = extract_valid_utf8(&buf);
+                        for s in valid_utf8_strings {
+                            if s.len() > 0 {
+                                error!(">>>+ udp recv_from: {}", s);
+                            }
+                        }
+
+                        ret.map(|(val, addr)| (val, from_core_sockaddr(addr)))
+                        .map(|(val, sa)| (val, SocketAddr::from(sa)))
+                    }
+                    None => {
+                        let ret = s.recv_from(buf);
+
+                        let valid_utf8_strings = extract_valid_utf8(&buf);
+                        let recv_len = ret.map_or_else(|_| 0, |result| result.0);
+                        error!(">>>+ udp recv_from ({}) ", recv_len);
+                        for s in valid_utf8_strings {
+
+                            if s.len() > 0 {
+                                error!(">>>+ udp recv_from: {}", s);
+                            }
+                        }
+
+                        ret.map(|(val, addr)| (val, from_core_sockaddr(addr)))
+                        .map(|(val, sa)| (val, SocketAddr::from(sa)))
+                    }
                 }
             }
             SocketInner::Netlink(s) => {
-                    error!(">>> netlink recv_from ");
                     s.recv_from(buf)
                     .map(|val| (val, SocketAddr::new_netlink(s.nl_groups)))
             },
@@ -777,6 +861,26 @@ impl FileIO for Socket {
     fn ready_to_write(&self) -> bool {
         self.writable()
     }
+}
+
+/// extracts valid UTF-8 strings from a byte slice.
+pub fn extract_valid_utf8(input: &[u8]) -> Vec<&str> {
+    let input_str = match core::str::from_utf8(input) {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+
+    let mut valid_utf8_strings = Vec::new();
+
+    let mut start = 0;
+    for (end, _) in input_str.char_indices() {
+        if core::str::from_utf8(&input[start..end]).is_ok() {
+            valid_utf8_strings.push(&input_str[start..end]);
+            start = end;
+        }
+    }
+
+    valid_utf8_strings
 }
 
 /// Turn a socket address buffer into a SocketAddr
