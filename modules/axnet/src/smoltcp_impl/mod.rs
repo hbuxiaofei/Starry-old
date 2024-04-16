@@ -133,11 +133,9 @@ impl<'a> SocketSetWrapper<'a> {
 
     pub fn bind_check(&self, addr: IpAddress, port: u16) -> AxResult {
         let mut sockets = self.0.lock();
-        error!("checking addr: {:?}, port: {}", addr, port);
         for item in sockets.iter_mut() {
             match item.1 {
                 Socket::Udp(s) => {
-                    error!("{}", s.endpoint().port);
                     if s.endpoint().port == port {
                         return Err(AxError::AddrInUse);
                     }

@@ -252,7 +252,7 @@ impl UdpSocket {
 
     pub fn add_membership(&self, multicast_addr: IpAddr, interface_addr: IpAddr) {
         let timestamp = Instant::from_micros_const((current_time_nanos() / NANOS_PER_MICROS) as i64);
-        error!(
+        debug!(
             ">>> setsockopt IP_ADD_MEMBERSHIP: multiaddr: {}, interfaceaddr: {}",
             multicast_addr, interface_addr
         );

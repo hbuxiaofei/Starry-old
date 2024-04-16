@@ -52,7 +52,7 @@ fn main() {
     }
     #[cfg(not(feature = "batch"))]
     {
-        let init_args = vec!["busybox".to_string(), "sh".to_string()];
+        let init_args = vec!["/bin/test".to_string(), "sh".to_string()];
         let user_process = Process::init(init_args, &envs).unwrap();
         let now_process_id = user_process.get_process_id() as isize;
         let mut exit_code = 0;

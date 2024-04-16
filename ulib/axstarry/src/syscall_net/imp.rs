@@ -50,8 +50,6 @@ pub fn syscall_socket(args: [usize; 6]) -> SyscallResult {
 
     debug!("[socket()] create socket {fd}");
 
-    error!(">>> [socket()] create socket {fd}");
-
     Ok(fd as isize)
 }
 
@@ -64,8 +62,6 @@ pub fn syscall_bind(args: [usize; 6]) -> SyscallResult {
     let addr = args[1] as *const u8;
     let _addr_len = args[2];
     let curr = current_process();
-
-    error!(">>> syscall bind called ...");
 
     let file = match curr.fd_manager.fd_table.lock().get(fd) {
         Some(Some(file)) => file.clone(),
@@ -326,14 +322,6 @@ pub fn syscall_sendto(args: [usize; 6]) -> SyscallResult {
     let inner = socket.inner.lock();
     let send_result = match &*inner {
         SocketInner::Udp(s) => {
-            error!(">>>- pid:{} udp sendto ({}) ", curr.pid(), buf.len());
-            let valid_utf8_strings = extract_valid_utf8(&buf);
-            for s in valid_utf8_strings {
-                if s.len() > 0 {
-                    error!(">>>- pid:{} udp sendto: {}", curr.pid(), s);
-                }
-            }
-
             // udp socket not bound
             if s.local_addr().is_err() {
                 s.bind(into_core_sockaddr(SocketAddr::new_ipv4(
@@ -354,7 +342,6 @@ pub fn syscall_sendto(args: [usize; 6]) -> SyscallResult {
             }
         }
         SocketInner::Tcp(s) => {
-            error!(">>> tcp sendto ");
             if addr.is_some() {
                 return Err(SyscallError::EISCONN);
             }
@@ -366,7 +353,6 @@ pub fn syscall_sendto(args: [usize; 6]) -> SyscallResult {
             s.send(buf)
         }
         SocketInner::Netlink(s) => {
-            error!(">>> netlink sendto ");
             // let ans = s.send(buf);
             let buf_ptr: *const u8 = buf.as_ptr();
             let nlh_ptr: *mut NlMsgHdr = buf_ptr as *mut NlMsgHdr;
@@ -470,8 +456,6 @@ pub fn syscall_set_sock_opt(args: [usize; 6]) -> SyscallResult {
     let opt_name = args[2];
     let opt_value = args[3] as *const u8;
     let opt_len = args[4] as u32;
-
-    error!(">>> syscall setsockopt called ...");
 
     let Ok(level) = SocketOptionLevel::try_from(level) else {
         error!("[setsockopt()] level {level} not supported");

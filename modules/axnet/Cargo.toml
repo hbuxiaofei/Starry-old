@@ -36,7 +36,7 @@ version = "0.5.11"
 default-features = false
 
 [dependencies.smoltcp]
-git = "https://github.com/YXalix/smoltcp.git"
+git = " https://gh-proxy.com/https://github.com/YXalix/smoltcp.git"
 default-features = false
 features = [
   "alloc", "log",   # no std

@@ -5,7 +5,6 @@ use axerrno::{AxError, AxResult};
 use axfs::api::{FileIO, OpenFlags, FileIOType, SeekFrom};
 use axsync::Mutex;
 use axtask::yield_now;
-use axlog::error;
 
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy)]
@@ -50,8 +49,6 @@ impl EventfdFile {
 
 impl FileIO for EventfdFile {
     fn read(&self, buf: &mut [u8]) -> AxResult<usize> {
-        error!(">>> eventfd read start");
-
         if buf.len() < core::mem::size_of::<u64>() {
             return Err(AxError::InvalidInput);
         }
@@ -79,12 +76,9 @@ impl FileIO for EventfdFile {
         let bytes = cnt.to_ne_bytes();
         buf.copy_from_slice(&bytes);
 
-        error!(">>> eventfd read over");
-
         Ok(size_of::<u64>())
     }
     fn write(&self, buf: &[u8]) -> AxResult<usize> {
-        error!(">>> eventfd write start");
 
         if buf.len() < core::mem::size_of::<u64>() {
             return Err(AxError::InvalidInput);
@@ -108,8 +102,6 @@ impl FileIO for EventfdFile {
         }
         let mut inner = self.inner.lock();
         inner.ctx.count += ucnt;
-
-        error!(">>> eventfd write over");
 
         Ok(size_of::<u64>())
     }

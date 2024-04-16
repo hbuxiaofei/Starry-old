@@ -8,7 +8,7 @@ use alloc::vec;
 use axerrno::AxError;
 use axfs::api::{FileIOType, OpenFlags, SeekFrom};
 
-use axlog::{debug, info, error};
+use axlog::{debug, info};
 use axprocess::current_process;
 use axprocess::link::{create_link, deal_with_path, real_path, AT_FDCWD};
 

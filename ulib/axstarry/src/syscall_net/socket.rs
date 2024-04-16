@@ -717,31 +717,12 @@ impl Socket {
                 match self.get_recv_timeout() {
                     Some(time) => {
                         let ret = s.recv_from_timeout(buf, time.turn_to_ticks());
-
-                        error!(">>>+ udp recv_from ");
-                        let valid_utf8_strings = extract_valid_utf8(&buf);
-                        for s in valid_utf8_strings {
-                            if s.len() > 0 {
-                                error!(">>>+ udp recv_from: {}", s);
-                            }
-                        }
-
                         ret.map(|(val, addr)| (val, from_core_sockaddr(addr)))
                         .map(|(val, sa)| (val, SocketAddr::from(sa)))
                     }
                     None => {
                         let ret = s.recv_from(buf);
-
-                        let valid_utf8_strings = extract_valid_utf8(&buf);
                         let recv_len = ret.map_or_else(|_| 0, |result| result.0);
-                        error!(">>>+ udp recv_from ({}) ", recv_len);
-                        for s in valid_utf8_strings {
-
-                            if s.len() > 0 {
-                                error!(">>>+ udp recv_from: {}", s);
-                            }
-                        }
-
                         ret.map(|(val, addr)| (val, from_core_sockaddr(addr)))
                         .map(|(val, sa)| (val, SocketAddr::from(sa)))
                     }
@@ -861,26 +842,6 @@ impl FileIO for Socket {
     fn ready_to_write(&self) -> bool {
         self.writable()
     }
-}
-
-/// extracts valid UTF-8 strings from a byte slice.
-pub fn extract_valid_utf8(input: &[u8]) -> Vec<&str> {
-    let input_str = match core::str::from_utf8(input) {
-        Ok(s) => s,
-        Err(_) => return Vec::new(),
-    };
-
-    let mut valid_utf8_strings = Vec::new();
-
-    let mut start = 0;
-    for (end, _) in input_str.char_indices() {
-        if core::str::from_utf8(&input[start..end]).is_ok() {
-            valid_utf8_strings.push(&input_str[start..end]);
-            start = end;
-        }
-    }
-
-    valid_utf8_strings
 }
 
 /// Turn a socket address buffer into a SocketAddr
