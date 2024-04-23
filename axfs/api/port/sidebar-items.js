@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["TCGETS","TIOCGPGRP","TIOCGWINSZ","TIOCSPGRP"],"enum":["FileIOType"],"struct":["AccessMode","ConsoleWinSize","Kstat","OpenFlags"],"trait":["AsAny","FileExt","FileIO"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["handle_signals","load_trap_for_signal","send_signal_to_process","send_signal_to_thread","signal_return"],"struct":["SignalModule"]};

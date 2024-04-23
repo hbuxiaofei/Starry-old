@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["KEY_TO_SHMID","SHARED_MEMS"],"struct":["MapArea","MemBackend","MemorySet"]};
